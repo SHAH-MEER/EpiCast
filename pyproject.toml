@@ -9,6 +9,7 @@ dependencies = [
     "epiweeks>=2.3",
     "prophet>=1.1.5",
     "mlflow>=2.14",
+    "lightgbm>=4.3",
 ]
 
 [project.optional-dependencies]

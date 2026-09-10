@@ -17,20 +17,13 @@ import mlflow.prophet
 import pandas as pd
 from prophet import Prophet
 
+from epicast.data import DEFAULT_DATA, DEFAULT_TARGET, load_series
 from epicast.metrics import forecast_metrics
 
-DEFAULT_DATA = Path("data/processed/ilinet_national_weekly.csv")
 DEFAULT_EXPERIMENT = "epicast-ili-forecast"
 DEFAULT_HORIZON = 4
-DEFAULT_TARGET = "wili"
 
 logger = logging.getLogger(__name__)
-
-
-def load_series(data_path: Path, target: str) -> pd.DataFrame:
-    """Load the cleaned weekly ILI series as Prophet's expected ds/y frame."""
-    df = pd.read_csv(data_path, parse_dates=["week_start"])
-    return df[["week_start", target]].rename(columns={"week_start": "ds", target: "y"}).sort_values("ds")
 
 
 def make_model() -> Prophet:

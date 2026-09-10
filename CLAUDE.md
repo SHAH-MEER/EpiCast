@@ -42,8 +42,11 @@ Phases 0–6 are the CV-ready core. Phase 7 turns this from "an MLOps demo" into
 ## Current Phase
 _Update this line as you progress — tell Claude Code which phase you're on at the start of each session._
 
-Status: Phase 1 complete — Prophet seasonal baseline working end to end. Trains on the full
-weekly national ILI series, evaluates via a 4-week holdout (MAE/RMSE/MAPE), refits on the full
-series, and logs params/metrics/model to MLflow (experiment `epicast-ili-forecast`, local
-file+sqlite tracking store). Next: Phase 2, LightGBM with lag/rolling/seasonal features logged
-to the same experiment for the baseline-vs-upgrade comparison.
+Status: Phase 2 complete — LightGBM upgrade working end to end, logged to the same
+`epicast-ili-forecast` MLflow experiment as the Phase 1 Prophet baseline. Features: lags
+(1/2/3/4/52 weeks), rolling mean/std (4/8 weeks), sin/cos week-of-year seasonality
+(`src/epicast/features.py`). One one-step-ahead regressor forecasts multiple weeks out via
+recursive prediction. On the current 4-week holdout (Aug 2026, off-season): LightGBM MAE 0.12 /
+RMSE 0.16 / MAPE 10.3% vs. Prophet MAE 0.79 / RMSE 0.80 / MAPE 77.9% — a genuine
+baseline-vs-upgrade story, though this is one holdout window, not a full backtest. Next: Phase 3,
+FastAPI service (`/predict`, `/health`) wrapping the best registered model.
