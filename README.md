@@ -1,7 +1,114 @@
 # Epicast
 
-A real-time ILI (influenza-like-illness) forecasting API. The point isn't just a model —
-it's the full lifecycle working end to end: **train → track → serve → ship → monitor**.
+**A flu forecasting API with a full, working MLOps lifecycle behind it** — not a notebook, a
+system: train → track → serve → ship → monitor, all actually wired together and verified end to
+end.
+
+## Why influenza surveillance matters
+
+Every year, the CDC estimates flu causes somewhere between **9.4 and 51 million illnesses**,
+**120,000–710,000 hospitalizations**, and **6,300–52,000 deaths** in the United States alone —
+the range itself telling you something: some seasons are a bad cold, others overwhelm emergency
+rooms, and nobody knows in advance which kind of season it'll be
+([CDC, Estimated Flu Burden](https://www.cdc.gov/flu-burden/php/about/index.html)).
+
+That's exactly why the CDC runs [ILINet](https://www.cdc.gov/fluview/overview/index.html):
+roughly **4,000 outpatient healthcare providers** across all 50 states report, every single week,
+how many patients came in with flu-like symptoms. It's the earliest real signal of whether this
+week is a normal week or the start of something that hospitals need to staff up for — vaccine
+strain selection, surge planning, and public health messaging all lean on reading that signal
+correctly, and reading it *early*.
+
+## Why forecasting it is hard
+
+Not "hard" in the sense of a clever loss function — hard in the sense that most of what breaks a
+forecasting system in practice has nothing to do with the model:
+
+- **The signal is aggressively seasonal, and that changes what "normal" means from one month to
+  the next.** A flat "is this week different from history" comparison is close to meaningless —
+  history includes both flu-season peaks and summer troughs at once. (This bit us directly while
+  building this: an early version of the monitoring in this repo compared a summer window against
+  a reference mixing every season, and it flagged "drift" on *every single run* — not because
+  anything was actually wrong, purely because summer doesn't look like winter.)
+- **The ground truth itself isn't stable.** ILINet's reporting network has grown substantially
+  over the life of this dataset — the number of participating providers has roughly doubled — so
+  raw visit counts trend upward for reasons that have nothing to do with disease activity. A drift
+  monitor that doesn't know to ignore that will cry wolf forever.
+- **A single number isn't a forecast.** A point estimate with no sense of its own uncertainty is
+  close to useless for a real staffing or response decision — but the model family that's best at
+  this kind of tabular forecasting (gradient boosting) doesn't hand you a confidence interval for
+  free the way classical time-series models do.
+- **Shipping the model once is the easy 20%.** The signal shifts as the season turns, which means
+  a model that was accurate in October can be quietly wrong by December — and most from-scratch
+  forecasting projects never build the part that would actually notice that, let alone respond
+  to it.
+
+## Enter Epicast
+
+Epicast is a direct answer to each of those, not a generic ML template:
+
+| The hard part | What Epicast actually does about it |
+| --- | --- |
+| Seasonality breaks naive comparisons | Every drift check compares the current window against the *same calendar weeks in prior years* — not raw history |
+| The reporting network itself isn't stable | Monitoring watches the rate signal (`wili`/`ili`) the model forecasts, not raw participant counts that trend upward regardless of disease activity |
+| A point forecast isn't a real answer | The served model is three LightGBM regressors — a point model plus two quantile models — giving `/predict` a genuine forecast *and* confidence interval |
+| Models go stale silently | A closed-loop trigger checks for drift and automatically retrains + promotes a new model version when it's crossed |
+| "It worked on my machine" | The whole stack — MLflow, training, the API — comes up with one `docker compose up`, verified from a completely clean state, with CI publishing a real image to GHCR on every merge |
+
+And the comparison story is real, not staged: on held-out data, the LightGBM upgrade cuts error
+roughly **6x** versus the Prophet baseline (MAE 0.12 vs. 0.79) — both runs logged side by side in
+the same MLflow experiment, so that's a claim you can go look at, not take on faith.
+
+## See it in action
+
+Screenshots below pull from [`docs/screenshots/`](docs/screenshots/) — drop a PNG in with the
+right filename and it replaces the placeholder automatically. Capture instructions are in
+`docs/screenshots/README.md`; the short version is under each image.
+
+### The comparison story is real
+
+![MLflow experiment comparing Prophet and LightGBM runs](docs/screenshots/mlflow-comparison.png)
+
+Open `http://localhost:5000` → the `epicast-ili-forecast` experiment → screenshot the runs table
+with MAE/RMSE/MAPE columns visible for both `prophet` and `lightgbm` runs.
+
+### Models are versioned, not just files on disk
+
+![MLflow model registry showing epicast-ili-forecaster versions](docs/screenshots/mlflow-registry.png)
+
+**Models → epicast-ili-forecaster** in the MLflow UI, with the `champion` alias visible on a
+version.
+
+### The API is real and self-documenting
+
+![FastAPI Swagger docs showing /predict and /health](docs/screenshots/api-docs.png)
+
+`http://localhost:8080/docs`.
+
+### `/predict` returns a forecast *and* an interval
+
+![Example /predict JSON response with yhat, yhat_lower, yhat_upper](docs/screenshots/predict-response.png)
+
+"Try it out" on `/predict` in `/docs`, or a pretty-printed terminal `curl` call.
+
+### One command brings up the whole stack
+
+![Terminal output of docker compose ps -a showing three services](docs/screenshots/docker-compose-ps.png)
+
+`docker compose ps -a` — `mlflow` healthy, `trainer` exited (0), `api` running.
+
+### Monitoring isn't just a checkbox
+
+![Evidently drift report distribution chart](docs/screenshots/drift-report.png)
+
+Open `reports/drift_report.html` in a browser after running the stack.
+
+### CI/CD is real, not aspirational
+
+![GitHub Actions run with test, build, and deploy all green](docs/screenshots/github-actions.png)
+
+The [Actions tab](https://github.com/SHAH-MEER/EpiCast/actions), any run with all three jobs
+green.
 
 ## Architecture
 
@@ -12,36 +119,48 @@ CDC FluView (Delphi Epidata API)
 data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
         │
         ▼
-   [Phase 1-2, done] Prophet + LightGBM, both logged to one MLflow experiment
+   Prophet + LightGBM, both logged to one MLflow experiment
         │              (features: lags, rolling stats, seasonal terms for LightGBM)
         ▼
    MLflow model registry  ── epicast-ili-forecaster@champion (LightGBM: point + 2 quantile models)
         │
         ▼
-   [Phase 3, done] FastAPI service  ── /predict, /health
+   FastAPI service  ── /predict, /health
         │
         ▼
-   [Phase 4, done] docker compose   ── mlflow + trainer (one-shot) + api
+   docker compose   ── mlflow + trainer (one-shot) + api
         │
         ▼
-   [Phase 5, done] GitHub Actions   ── lint/test + build on every push, deploy (GHCR) on main
+   GitHub Actions   ── lint/test + build on every push, deploy (GHCR) on main
         │
         ▼
-   [Phase 6, done] Evidently drift report  ── current season vs. same weeks in prior years
+   Evidently drift report  ── current season vs. same weeks in prior years
         │
         ▼
-   [Phase 7, stretch, done] retrain_trigger.py  ── ingest → check drift → retrain + register if crossed
+   retrain_trigger.py  ── ingest → check drift → retrain + register if crossed
 ```
 
 Data source: **CDC FluView (ILINet)**, national series, pulled via the public
 [Delphi Epidata API](https://cmu-delphi.github.io/delphi-epidata/api/fluview.html) (no API key
 required for anonymous, rate-limited access).
 
-## Status
+## Quickstart
 
-All phases complete, including the Phase 7 stretch goal: a closed-loop retraining trigger. Live
-at [github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast). See `CLAUDE.md` for the
-full phased build order and definition of done.
+```bash
+docker compose up --build
+```
+
+That's the whole setup: it brings up MLflow, ingests data, trains and compares both models,
+registers the better one, and starts serving it.
+
+```bash
+curl http://localhost:8080/health
+curl "http://localhost:8080/predict?horizon=4"
+```
+
+MLflow UI: `http://localhost:5000`. API docs: `http://localhost:8080/docs`. See
+[Running everything with Docker](#running-everything-with-docker) below for what's actually
+happening and a couple of things worth knowing if you touch the compose config.
 
 ## Running the ingestion script
 
@@ -215,3 +334,9 @@ Non-Goals rules out standing up something like Kubernetes just to get one.
 
 Verified against a real run on GitHub Actions (not just YAML-checked): all three jobs passed, and
 the pushed image was pulled back down from GHCR to confirm it's actually there and public.
+
+## Status
+
+All phases complete, including the Phase 7 stretch goal. See `CLAUDE.md` for the full phased
+build order, definition of done, and a running log of what was built, verified, and fixed along
+the way.
