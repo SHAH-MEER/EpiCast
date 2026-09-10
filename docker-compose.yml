@@ -1,0 +1,54 @@
+services:
+  mlflow:
+    build: .
+    command: >-
+      mlflow server
+      --backend-store-uri sqlite:////mlflow-data/mlflow.db
+      --artifacts-destination /mlflow-data/mlartifacts
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: ingest data, train both models, register the LightGBM forecaster as
+  # "champion". Runs once per `docker compose up` and exits; the api service waits
+  # for it to finish successfully before starting.
+  trainer:
+    build: .
+    command: >-
+      sh -c "
+      python -m epicast.ingest.fetch_ilinet &&
+      python -m epicast.train.prophet_baseline &&
+      python -m epicast.train.lightgbm_model --register
+      "
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - epicast-data:/app/data
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: uvicorn epicast.serve.app:app --host 0.0.0.0 --port 8000
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+    volumes:
+      - epicast-data:/app/data
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
+
+volumes:
+  mlflow-data:
+  epicast-data:

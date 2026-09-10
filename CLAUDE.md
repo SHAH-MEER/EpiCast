@@ -54,5 +54,15 @@ version tracked via the `champion` alias (`train ... --register` promotes a new 
 from the most recent point in the ingested series. One caveat worth revisiting later: interval
 coverage on the current 4-observation holdout is only 50% against an 80% nominal interval — too
 small a sample to conclude the interval is miscalibrated, but worth rechecking once Phase 6's
-drift/monitoring tooling is in place. Next: Phase 4, Dockerfile + docker-compose for one-command
-setup.
+drift/monitoring tooling is in place.
+
+Status: Phase 4 written — `Dockerfile` (single image, reused for all three services) and
+`docker-compose.yml` (`mlflow` tracking server + registry, one-shot `trainer` that ingests/trains/
+registers, then `api`). Data shared between `trainer` and `api` via a named volume; both point at
+`mlflow` over the network via `MLFLOW_TRACKING_URI`. `mlflow server`'s actual `/health` route and
+its `--artifacts-destination` vs `--default-artifact-root` behavior (proxied by default in MLflow
+3.x since `--serve-artifacts` defaults on) were confirmed against MLflow's own source rather than
+assumed. **Not verified with a real `docker compose up`** — Docker isn't installed in the dev
+environment this was built in. Whoever runs this next should treat Phase 4 as unverified until
+`docker compose up --build` has actually been run once; `docker compose logs trainer` is the
+first place to look if `api` never comes up. Next: Phase 5, GitHub Actions CI/CD.

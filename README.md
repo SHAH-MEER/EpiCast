@@ -21,7 +21,7 @@ data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
    [Phase 3, done] FastAPI service  ── /predict, /health
         │
         ▼
-   [Phase 4] docker compose   ── one-command bring-up of API (+ MLflow, once wired)
+   [Phase 4, done] docker compose   ── mlflow + trainer (one-shot) + api
         │
         ▼
    [Phase 5] GitHub Actions   ── lint/test on PR, build+deploy on merge
@@ -39,7 +39,9 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 3 — FastAPI service (`/predict`, `/health`) serving the registered LightGBM forecaster.
+Phase 4 — `docker compose up` brings up MLflow, trains + registers both models, and serves the
+API, all in one command. **Not yet verified with a real Docker run** (Docker isn't installed in
+the environment this was built in) — see the Docker section below before trusting it blindly.
 See `CLAUDE.md` for the full phased build order and definition of done.
 
 ## Running the ingestion script
@@ -112,3 +114,25 @@ that forward — and takes `horizon` (1-12 weeks, default 4) as its only paramet
 pytest
 # tests/test_app.py skips if no champion model is registered locally yet
 ```
+
+## Running everything with Docker
+
+```bash
+docker compose up --build
+```
+
+This brings up three services:
+
+- `mlflow` — tracking server + model registry at `http://localhost:5000`, backed by a named
+  volume (`mlflow-data`) so runs/models survive restarts
+- `trainer` — one-shot: ingests data, trains Prophet, trains + registers LightGBM as the
+  `champion` alias, then exits (`docker compose` waits for it before starting `api`)
+- `api` — the FastAPI service at `http://localhost:8000` (`/docs`, `/health`, `/predict`)
+
+Data (`data/`) is shared between `trainer` and `api` via a named volume (`epicast-data`), and
+both point at the `mlflow` service over the network via `MLFLOW_TRACKING_URI`.
+
+**Caveat:** this was written and YAML/CLI-flag-verified, but not run against a real Docker
+Engine — Docker wasn't available in the environment this was built in. Prophet's install compiles
+cmdstan from source, so the first `--build` will take several minutes. If something doesn't come
+up cleanly, `docker compose logs trainer` is the first place to look.
