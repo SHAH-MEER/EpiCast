@@ -42,4 +42,4 @@ Phases 0–6 are the CV-ready core. Phase 7 turns this from "an MLOps demo" into
 ## Current Phase
 _Update this line as you progress — tell Claude Code which phase you're on at the start of each session._
 
-Status: Not started — beginning Phase 0.
+Status: Phase 0 complete — repo scaffold + CDC FluView (ILINet) ingestion script working end to end (869 weekly national rows, 2010-01-03 to present). Data source decision resolved: CDC FluView, national region. Next: Phase 1, Prophet baseline + MLflow logging.
