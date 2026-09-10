@@ -92,5 +92,23 @@ named. Confirmed the pushed image is real and public by pulling it back down wit
 rule selection (`E, F, I, UP` in `pyproject.toml`) rather than its undocumented default rule set,
 which turned out to include opinionated plugin rules (blind-except, nested-with) not worth having;
 fixed the handful of real issues found (import sorting, two lines over 120 chars). Local repo was
-renamed from `master` to `main` to match the intended default branch before the first push. Next:
-Phase 6, Evidently drift report comparing incoming vs. training data.
+renamed from `master` to `main` to match the intended default branch before the first push.
+
+Status: Phase 6 complete — Evidently drift report (`src/epicast/monitor/drift_report.py`),
+comparing the most recent weeks of `wili`/`ili` against the _same calendar weeks in prior years_,
+not raw history. This mattered in practice, not just in theory: the first version compared against
+all of history and flagged "drift" on every single run, purely from ILI's seasonality (a summer
+window's mean wili ~1.0 vs. an all-season reference mean ~2.15, up to 8.3 during flu peaks) —
+caught by actually running it against the real data before shipping, not assumed. Also excludes
+`num_ili`/`num_patients` from monitoring: CDC's ILINet reporting network has roughly doubled in
+participants over the dataset's history (~1.15M vs ~2.5M mean patients, same-season comparison),
+so those raw counts trend upward regardless of actual disease dynamics — including them made the
+report a permanent false alarm, which defeats the point of a flag people are meant to trust.
+Exit code 1 signals a genuine drift finding, but that's swallowed (`|| true`) in `docker
+compose`'s `trainer` step, since a real finding is a monitoring result, not a training failure,
+and shouldn't block `api` from serving a perfectly good model. Verified against real Docker again
+(not just locally): clean `docker compose down -v && up --build -d`, drift report generated
+inside the container, landed on the host via a bind mount (`./reports:/app/reports`), and `api`
+came up regardless of the (correct, season-adjusted, genuinely borderline p=0.048) drift finding
+on the current live data. Next: Phase 7 (stretch) — a retraining trigger that fires off this
+report's exit code.

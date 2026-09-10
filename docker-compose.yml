@@ -19,20 +19,25 @@ services:
       retries: 20
 
   # One-shot: ingest data, train both models, register the LightGBM forecaster as
-  # "champion". Runs once per `docker compose up` and exits; the api service waits
-  # for it to finish successfully before starting.
+  # "champion", then run the drift report. Runs once per `docker compose up` and
+  # exits; the api service waits for it to finish before starting. drift_report's
+  # own exit code is swallowed with `|| true`: it exits 1 when it *correctly finds*
+  # drift, which is a monitoring result, not a training failure -- letting that fail
+  # the container would block api from ever starting on a perfectly good model.
   trainer:
     build: .
     command: >-
       sh -c "
       python -m epicast.ingest.fetch_ilinet &&
       python -m epicast.train.prophet_baseline &&
-      python -m epicast.train.lightgbm_model --register
+      python -m epicast.train.lightgbm_model --register &&
+      (python -m epicast.monitor.drift_report || true)
       "
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - epicast-data:/app/data
+      - ./reports:/app/reports
     depends_on:
       mlflow:
         condition: service_healthy

@@ -11,6 +11,8 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+reports/*
+!reports/.gitkeep
 mlruns/
 mlartifacts/
 mlflow.db

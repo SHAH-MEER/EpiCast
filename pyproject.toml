@@ -12,6 +12,7 @@ dependencies = [
     "lightgbm>=4.3",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "evidently>=0.5",
 ]
 
 [project.optional-dependencies]

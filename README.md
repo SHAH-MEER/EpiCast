@@ -27,7 +27,7 @@ data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
    [Phase 5, done] GitHub Actions   ── lint/test + build on every push, deploy (GHCR) on main
         │
         ▼
-   [Phase 6] Evidently drift report  ── incoming data vs. training distribution
+   [Phase 6, done] Evidently drift report  ── current season vs. same weeks in prior years
         │
         ▼
    [Phase 7, stretch] drift-triggered retraining
@@ -39,8 +39,7 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 5 — CI/CD via GitHub Actions: lint + test and a Docker build on every push/PR, image
-published to GHCR on merge to main. Live at
+Phase 6 — Evidently drift report, season-aware, wired into the Docker pipeline. Live at
 [github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast). See `CLAUDE.md` for the
 full phased build order and definition of done.
 
@@ -149,6 +148,30 @@ real forecast. Two things worth knowing if you touch the MLflow service config:
 
 First `--build` will take a few minutes (installing prophet/mlflow/lightgbm from scratch);
 `docker compose logs trainer` is the first place to look if `api` never comes up.
+
+## Drift monitoring
+
+```bash
+python -m epicast.monitor.drift_report
+# -> reports/drift_report.html, exits 1 if drift is flagged (0 otherwise)
+```
+
+Compares the most recent `--current-weeks` (default 12) of `wili`/`ili` against every prior
+year's rows on those *same calendar weeks* — not the whole history. ILI is strongly seasonal, so
+a naive "current window vs. all of history" comparison flags "drift" on essentially every run: a
+summer window (mean wili ~1.0) will always look wildly different from a reference mixing every
+season including flu peaks (mean ~2.15, up to 8.3) — confirmed empirically before shipping the
+season-aware version, not assumed. The raw participant counts (`num_ili`, `num_patients`) are
+excluded from monitoring for the same reason: CDC's reporting network has roughly doubled in
+number of participants over the dataset's history, so those columns trend upward regardless of
+actual disease dynamics — including them made the report flag drift on every single run,
+which is worse than not monitoring at all.
+
+Wired into `docker compose`'s `trainer` step (after training, before `api` starts) — its exit
+code is swallowed there (`|| true`) since a genuine drift finding is a monitoring result, not a
+training failure, and shouldn't block `api` from serving a perfectly good model. The report
+writes to `reports/`, bind-mounted to the host so you can open the HTML directly after
+`docker compose up` without reaching into the container.
 
 ## CI/CD
 
