@@ -24,7 +24,7 @@ data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
    [Phase 4, done] docker compose   ── mlflow + trainer (one-shot) + api
         │
         ▼
-   [Phase 5] GitHub Actions   ── lint/test on PR, build+deploy on merge
+   [Phase 5, done] GitHub Actions   ── lint/test + build on every push, deploy (GHCR) on main
         │
         ▼
    [Phase 6] Evidently drift report  ── incoming data vs. training distribution
@@ -39,9 +39,10 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 4 — `docker compose up` brings up MLflow, trains + registers both models, and serves the
-API, all in one command. Verified end to end from a completely clean state (no pre-existing
-volumes). See `CLAUDE.md` for the full phased build order and definition of done.
+Phase 5 — CI/CD via GitHub Actions: lint + test and a Docker build on every push/PR, image
+published to GHCR on merge to main. Live at
+[github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast). See `CLAUDE.md` for the
+full phased build order and definition of done.
 
 ## Running the ingestion script
 
@@ -148,3 +149,16 @@ real forecast. Two things worth knowing if you touch the MLflow service config:
 
 First `--build` will take a few minutes (installing prophet/mlflow/lightgbm from scratch);
 `docker compose logs trainer` is the first place to look if `api` never comes up.
+
+## CI/CD
+
+`.github/workflows/ci.yml` runs on every push and PR to main:
+
+- **test** — `ruff check .` then `pytest -q`
+- **build** — builds the shared Dockerfile (build-only, doesn't push) to catch breakage early
+- **deploy** — only on push to `main`: builds and pushes the image to GHCR as
+  `ghcr.io/shah-meer/epicast:latest` and `:<commit-sha>`, using the built-in `GITHUB_TOKEN` (no
+  external accounts or secrets needed)
+
+Verified against a real run on GitHub Actions (not just YAML-checked): all three jobs passed, and
+the pushed image was pulled back down from GHCR to confirm it's actually there and public.

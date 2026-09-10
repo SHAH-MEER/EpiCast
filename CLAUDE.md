@@ -78,4 +78,19 @@ Also: host port 8000 collides with a Windows/Hyper-V dynamic port reservation on
 machine (confirmed via `netsh interface ipv4 show excludedportrange` and a raw socket bind test,
 not Docker-specific) — `api`'s host port is mapped to 8080 instead; the container's internal port
 is still 8000. If this shows up on a different machine, `docker compose logs trainer` is still the
-first place to look for anything else. Next: Phase 5, GitHub Actions CI/CD.
+first place to look for anything else.
+
+Status: Phase 5 complete — GitHub Actions CI/CD (`.github/workflows/ci.yml`), verified against a
+real run, not just YAML-checked: pushed to a live repo
+([github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast)) and watched all three jobs
+pass. `test` (ruff + pytest) and `build` (Docker build, no push) run on every push/PR; `deploy`
+(build + push to GHCR, tagged `latest` and by commit SHA, using the built-in `GITHUB_TOKEN`) runs
+only on push to `main`. Deploy target scoped to GHCR rather than a live host — decided with the
+user rather than assumed, since Non-Goals rules out complex infra and no hosting target was ever
+named. Confirmed the pushed image is real and public by pulling it back down with a plain
+`docker pull`, not just trusting the workflow's green checkmark. Added `ruff` with an explicit
+rule selection (`E, F, I, UP` in `pyproject.toml`) rather than its undocumented default rule set,
+which turned out to include opinionated plugin rules (blind-except, nested-with) not worth having;
+fixed the handful of real issues found (import sorting, two lines over 120 chars). Local repo was
+renamed from `master` to `main` to match the intended default branch before the first push. Next:
+Phase 6, Evidently drift report comparing incoming vs. training data.
