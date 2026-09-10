@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from epicast.features import build_features
 from epicast.train.lightgbm_model import (
     RecursiveLightGBMForecaster,
     evaluate_holdout,
@@ -10,7 +11,6 @@ from epicast.train.lightgbm_model import (
     forecast_recursive,
     forecast_recursive_with_interval,
 )
-from epicast.features import build_features
 
 
 def _synthetic_series(n=160):
@@ -48,7 +48,9 @@ def test_forecast_recursive_with_interval_brackets_the_point_forecast():
     lower_model = fit_quantile_model(train_features, 0.1)
     upper_model = fit_quantile_model(train_features, 0.9)
 
-    predictions, lower, upper = forecast_recursive_with_interval(point_model, lower_model, upper_model, train, horizon=4)
+    predictions, lower, upper = forecast_recursive_with_interval(
+        point_model, lower_model, upper_model, train, horizon=4
+    )
 
     assert predictions.shape == lower.shape == upper.shape == (4,)
     assert np.all(lower <= upper)

@@ -13,4 +13,5 @@ DEFAULT_TARGET = "wili"
 def load_series(data_path: Path = DEFAULT_DATA, target: str = DEFAULT_TARGET) -> pd.DataFrame:
     """Load the cleaned weekly ILI series as a plain ds/y frame, sorted by date."""
     df = pd.read_csv(data_path, parse_dates=["week_start"])
-    return df[["week_start", target]].rename(columns={"week_start": "ds", target: "y"}).sort_values("ds").reset_index(drop=True)
+    series = df[["week_start", target]].rename(columns={"week_start": "ds", target: "y"})
+    return series.sort_values("ds").reset_index(drop=True)
