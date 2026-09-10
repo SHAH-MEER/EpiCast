@@ -56,13 +56,26 @@ coverage on the current 4-observation holdout is only 50% against an 80% nominal
 small a sample to conclude the interval is miscalibrated, but worth rechecking once Phase 6's
 drift/monitoring tooling is in place.
 
-Status: Phase 4 written — `Dockerfile` (single image, reused for all three services) and
-`docker-compose.yml` (`mlflow` tracking server + registry, one-shot `trainer` that ingests/trains/
-registers, then `api`). Data shared between `trainer` and `api` via a named volume; both point at
-`mlflow` over the network via `MLFLOW_TRACKING_URI`. `mlflow server`'s actual `/health` route and
-its `--artifacts-destination` vs `--default-artifact-root` behavior (proxied by default in MLflow
-3.x since `--serve-artifacts` defaults on) were confirmed against MLflow's own source rather than
-assumed. **Not verified with a real `docker compose up`** — Docker isn't installed in the dev
-environment this was built in. Whoever runs this next should treat Phase 4 as unverified until
-`docker compose up --build` has actually been run once; `docker compose logs trainer` is the
-first place to look if `api` never comes up. Next: Phase 5, GitHub Actions CI/CD.
+Status: Phase 4 complete — `docker compose up --build` verified end to end from a completely
+clean state (`docker compose down -v` first, no pre-existing volumes): `mlflow` came up healthy,
+`trainer` ingested data, trained both models, and registered LightGBM as `champion` (exit 0), and
+`api` served a real forecast at `/predict`. `Dockerfile` is a single image reused across all three
+services; `docker-compose.yml` wires `mlflow` (tracking server + registry, sqlite backend +
+artifacts on a named volume) → one-shot `trainer` → `api`, with `data/` shared via a second named
+volume and both non-mlflow services pointed at `mlflow` over the network via
+`MLFLOW_TRACKING_URI`.
+
+Two real bugs only surfaced under actual Docker networking (not guessable from docs alone):
+
+1. MLflow 3.x proxies artifacts through `--artifacts-destination`, not `--default-artifact-root`,
+   whenever `--serve-artifacts` is on (the default) — had to switch flags.
+2. MLflow 3.x's server validates the request `Host` header against `--allowed-hosts` (default:
+   localhost + private IPs) to block DNS-rebinding attacks; the Compose service name `mlflow`
+   wasn't in that default list, so the trainer's requests got 403'd until `--allowed-hosts` was
+   set explicitly to include `mlflow` and `mlflow:5000`.
+
+Also: host port 8000 collides with a Windows/Hyper-V dynamic port reservation on this dev
+machine (confirmed via `netsh interface ipv4 show excludedportrange` and a raw socket bind test,
+not Docker-specific) — `api`'s host port is mapped to 8080 instead; the container's internal port
+is still 8000. If this shows up on a different machine, `docker compose logs trainer` is still the
+first place to look for anything else. Next: Phase 5, GitHub Actions CI/CD.

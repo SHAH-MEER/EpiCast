@@ -40,9 +40,8 @@ required for anonymous, rate-limited access).
 ## Status
 
 Phase 4 — `docker compose up` brings up MLflow, trains + registers both models, and serves the
-API, all in one command. **Not yet verified with a real Docker run** (Docker isn't installed in
-the environment this was built in) — see the Docker section below before trusting it blindly.
-See `CLAUDE.md` for the full phased build order and definition of done.
+API, all in one command. Verified end to end from a completely clean state (no pre-existing
+volumes). See `CLAUDE.md` for the full phased build order and definition of done.
 
 ## Running the ingestion script
 
@@ -98,13 +97,15 @@ Options: same as the Prophet script, plus `--register`.
 
 ```bash
 # requires a champion model registered first (see above)
-uvicorn epicast.serve.app:app --reload
+uvicorn epicast.serve.app:app --reload --port 8001
+# port 8000 collides with a Windows/Hyper-V dynamic port reservation on some machines --
+# if 8000 works fine on yours, feel free to drop --port and use the default
 
-curl http://127.0.0.1:8000/health
-curl "http://127.0.0.1:8000/predict?horizon=4"
+curl http://127.0.0.1:8001/health
+curl "http://127.0.0.1:8001/predict?horizon=4"
 ```
 
-Interactive docs at `http://127.0.0.1:8000/docs`. `/predict` forecasts forward from the most
+Interactive docs at `http://127.0.0.1:8001/docs`. `/predict` forecasts forward from the most
 recent point in `data/processed/ilinet_national_weekly.csv` — re-run the ingestion script to move
 that forward — and takes `horizon` (1-12 weeks, default 4) as its only parameter.
 
@@ -127,12 +128,23 @@ This brings up three services:
   volume (`mlflow-data`) so runs/models survive restarts
 - `trainer` — one-shot: ingests data, trains Prophet, trains + registers LightGBM as the
   `champion` alias, then exits (`docker compose` waits for it before starting `api`)
-- `api` — the FastAPI service at `http://localhost:8000` (`/docs`, `/health`, `/predict`)
+- `api` — the FastAPI service at `http://localhost:8080` (`/docs`, `/health`, `/predict`) — mapped
+  to host port 8080 rather than 8000, since 8000 collides with a Windows/Hyper-V dynamic port
+  reservation on some machines; the container's internal port is still 8000
 
 Data (`data/`) is shared between `trainer` and `api` via a named volume (`epicast-data`), and
 both point at the `mlflow` service over the network via `MLFLOW_TRACKING_URI`.
 
-**Caveat:** this was written and YAML/CLI-flag-verified, but not run against a real Docker
-Engine — Docker wasn't available in the environment this was built in. Prophet's install compiles
-cmdstan from source, so the first `--build` will take several minutes. If something doesn't come
-up cleanly, `docker compose logs trainer` is the first place to look.
+Verified end to end with a clean `docker compose down -v && docker compose up --build -d` (no
+pre-existing volumes): all three services reached the expected state and `/predict` returned a
+real forecast. Two things worth knowing if you touch the MLflow service config:
+
+- MLflow 3.x proxies artifacts through `--artifacts-destination` (not `--default-artifact-root`)
+  whenever `--serve-artifacts` is on, which it is by default.
+- MLflow 3.x's server validates the request `Host` header against `--allowed-hosts` (default:
+  localhost + private IPs) to block DNS-rebinding attacks — a Compose service name like `mlflow`
+  isn't in that default list, so it needs to be added explicitly or the trainer's requests get a
+  403.
+
+First `--build` will take a few minutes (installing prophet/mlflow/lightgbm from scratch);
+`docker compose logs trainer` is the first place to look if `api` never comes up.
