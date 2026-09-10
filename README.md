@@ -5,7 +5,7 @@ it's the full lifecycle working end to end: **train → track → serve → ship
 
 ## Architecture
 
-```
+```text
 CDC FluView (Delphi Epidata API)
         │  fetch_ilinet.py
         ▼
@@ -39,8 +39,8 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 0 — repo scaffold + data ingestion. See `CLAUDE.md` for the full phased build order and
-definition of done.
+Phase 1 — Prophet seasonal baseline, logged to MLflow (experiment `epicast-ili-forecast`).
+See `CLAUDE.md` for the full phased build order and definition of done.
 
 ## Running the ingestion script
 
@@ -54,6 +54,22 @@ python -m epicast.ingest.fetch_ilinet
 ```
 
 Options: `--region` (default `nat`), `--epiweeks` (default `201001-202653`), `--output`.
+
+## Training the Prophet baseline
+
+```bash
+python -m epicast.train.prophet_baseline
+# holds out the last --horizon weeks (default 4) for MAE/RMSE/MAPE,
+# then refits on the full series and logs that model to MLflow
+
+mlflow ui   # -> http://127.0.0.1:5000, experiment "epicast-ili-forecast"
+```
+
+Options: `--horizon`, `--target` (`wili` or `ili`), `--data`, `--experiment`.
+
+Note: MAPE on a holdout that lands in flu off-season (ILI rates near their yearly low) will
+look large in relative terms even when the absolute error (MAE/RMSE) is small — that's an
+artifact of percentage error near a low baseline, not a broken model.
 
 ## Tests
 
