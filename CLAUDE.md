@@ -42,11 +42,17 @@ Phases 0–6 are the CV-ready core. Phase 7 turns this from "an MLOps demo" into
 ## Current Phase
 _Update this line as you progress — tell Claude Code which phase you're on at the start of each session._
 
-Status: Phase 2 complete — LightGBM upgrade working end to end, logged to the same
-`epicast-ili-forecast` MLflow experiment as the Phase 1 Prophet baseline. Features: lags
-(1/2/3/4/52 weeks), rolling mean/std (4/8 weeks), sin/cos week-of-year seasonality
-(`src/epicast/features.py`). One one-step-ahead regressor forecasts multiple weeks out via
-recursive prediction. On the current 4-week holdout (Aug 2026, off-season): LightGBM MAE 0.12 /
-RMSE 0.16 / MAPE 10.3% vs. Prophet MAE 0.79 / RMSE 0.80 / MAPE 77.9% — a genuine
-baseline-vs-upgrade story, though this is one holdout window, not a full backtest. Next: Phase 3,
-FastAPI service (`/predict`, `/health`) wrapping the best registered model.
+Status: Phase 3 complete — FastAPI service (`/predict`, `/health`) serving the registered
+LightGBM forecaster, working end to end over real HTTP. LightGBM was picked over Prophet as the
+served model (MAE 0.12 vs 0.79 on the current holdout) even though it has no native confidence
+interval, by training two extra quantile regressors (10th/90th percentile) alongside the point
+model and applying them to the point model's recursive forecast trajectory. All three models plus
+the recursion logic are wrapped in one MLflow pyfunc model (`RecursiveLightGBMForecaster`,
+`src/epicast/train/lightgbm_model.py`) registered as `epicast-ili-forecaster`, with the served
+version tracked via the `champion` alias (`train ... --register` promotes a new version to it).
+`/predict?horizon=N` returns N weeks of `{week_start, yhat, yhat_lower, yhat_upper}` forecast
+from the most recent point in the ingested series. One caveat worth revisiting later: interval
+coverage on the current 4-observation holdout is only 50% against an 80% nominal interval — too
+small a sample to conclude the interval is miscalibrated, but worth rechecking once Phase 6's
+drift/monitoring tooling is in place. Next: Phase 4, Dockerfile + docker-compose for one-command
+setup.

@@ -15,10 +15,10 @@ data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
    [Phase 1-2, done] Prophet + LightGBM, both logged to one MLflow experiment
         │              (features: lags, rolling stats, seasonal terms for LightGBM)
         ▼
-   MLflow model registry  ── best model promoted
+   MLflow model registry  ── epicast-ili-forecaster@champion (LightGBM: point + 2 quantile models)
         │
         ▼
-   [Phase 3] FastAPI service  ── /predict, /health
+   [Phase 3, done] FastAPI service  ── /predict, /health
         │
         ▼
    [Phase 4] docker compose   ── one-command bring-up of API (+ MLflow, once wired)
@@ -39,8 +39,8 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 2 — Prophet baseline and LightGBM upgrade both logged to the same MLflow experiment
-(`epicast-ili-forecast`). See `CLAUDE.md` for the full phased build order and definition of done.
+Phase 3 — FastAPI service (`/predict`, `/health`) serving the registered LightGBM forecaster.
+See `CLAUDE.md` for the full phased build order and definition of done.
 
 ## Running the ingestion script
 
@@ -74,19 +74,41 @@ artifact of percentage error near a low baseline, not a broken model.
 ## Training the LightGBM upgrade
 
 ```bash
-python -m epicast.train.lightgbm_model
-# same holdout protocol as the Prophet baseline, logged to the same MLflow experiment
+python -m epicast.train.lightgbm_model --register
+# same holdout protocol as the Prophet baseline, logged to the same MLflow experiment;
+# --register also promotes the model to the "champion" alias the API serves
 ```
 
 Features: lags at 1/2/3/4/52 weeks, rolling mean/std over 4 and 8 weeks, and sin/cos-of-week-of-year
-for seasonality (`src/epicast/features.py`). A single one-step-ahead regressor forecasts multiple
-weeks out recursively — each prediction is fed back in as if it were observed to produce the next
-one, since a lag-feature model has no way to see past the horizon its lags were built for.
+for seasonality (`src/epicast/features.py`). Three LightGBM regressors share these features: a
+point (mean) model plus 10th/90th-percentile quantile models for the confidence interval. Multi-week
+forecasts come from recursively feeding the point model's own predictions back in as observed
+values, since a lag-feature model can't see past the horizon its lags were built for — the quantile
+models are then applied to that same trajectory rather than branching recursively themselves.
 
-Options: same as the Prophet script (`--horizon`, `--target`, `--data`, `--experiment`).
+All three models plus the recursive-forecast logic are wrapped in one MLflow pyfunc model
+(`RecursiveLightGBMForecaster`) and registered as `epicast-ili-forecaster`, so serving code just
+calls `.predict(history, params={"horizon": N})` without knowing about features or recursion.
+
+Options: same as the Prophet script, plus `--register`.
+
+## Running the API
+
+```bash
+# requires a champion model registered first (see above)
+uvicorn epicast.serve.app:app --reload
+
+curl http://127.0.0.1:8000/health
+curl "http://127.0.0.1:8000/predict?horizon=4"
+```
+
+Interactive docs at `http://127.0.0.1:8000/docs`. `/predict` forecasts forward from the most
+recent point in `data/processed/ilinet_national_weekly.csv` — re-run the ingestion script to move
+that forward — and takes `horizon` (1-12 weeks, default 4) as its only parameter.
 
 ## Tests
 
 ```bash
 pytest
+# tests/test_app.py skips if no champion model is registered locally yet
 ```
