@@ -110,5 +110,25 @@ and shouldn't block `api` from serving a perfectly good model. Verified against 
 (not just locally): clean `docker compose down -v && up --build -d`, drift report generated
 inside the container, landed on the host via a bind mount (`./reports:/app/reports`), and `api`
 came up regardless of the (correct, season-adjusted, genuinely borderline p=0.048) drift finding
-on the current live data. Next: Phase 7 (stretch) — a retraining trigger that fires off this
-report's exit code.
+on the current live data.
+
+Status: Phase 7 (stretch) complete — closed-loop retraining trigger
+(`src/epicast/monitor/retrain_trigger.py`): ingest fresh data → run the Phase 6 drift check
+(reused via `drift_report.generate_report`, not duplicated) → if drift crossed the threshold,
+retrain LightGBM and promote it to `champion` (via `epicast.train.lightgbm_model --register`, run
+as a subprocess so it reuses that already-tested CLI rather than re-implementing training/
+registration). Self-contained by design — does its own ingestion — so it can genuinely run
+standalone on a schedule without any other setup. `--force` retrains regardless of drift (for
+testing the trigger itself); `--skip-ingest` reuses the existing data file. 4 tests cover the
+decision logic (retrain on drift, skip when clean, force overrides, skip-ingest actually skips
+ingestion) via mocking, since the drift-detection correctness itself is already covered by
+Phase 6's tests. Verified for real, twice: locally against live data (found drift, retrained,
+registered v3 then v4 as champion across two separate runs), and against the live `docker
+compose` stack via `docker compose run --rm trainer python -m epicast.monitor.retrain_trigger
+--skip-ingest` (found drift, registered v2 in the containerized MLflow registry). Known,
+documented limitation: a running `api` container won't hot-reload a newly-registered champion
+without a restart — not built out, since genuinely closing that loop (or actually scheduling this
+periodically) needs a persistently-reachable hosted MLflow server this project doesn't have, and
+Non-Goals rules out standing up real infrastructure just to get one.
+
+All phases of CLAUDE.md's build order are now complete, including the Phase 7 stretch goal.

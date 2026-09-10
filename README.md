@@ -30,7 +30,7 @@ data/processed/ilinet_national_weekly.csv   (clean weekly national ILI series)
    [Phase 6, done] Evidently drift report  ── current season vs. same weeks in prior years
         │
         ▼
-   [Phase 7, stretch] drift-triggered retraining
+   [Phase 7, stretch, done] retrain_trigger.py  ── ingest → check drift → retrain + register if crossed
 ```
 
 Data source: **CDC FluView (ILINet)**, national series, pulled via the public
@@ -39,8 +39,8 @@ required for anonymous, rate-limited access).
 
 ## Status
 
-Phase 6 — Evidently drift report, season-aware, wired into the Docker pipeline. Live at
-[github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast). See `CLAUDE.md` for the
+All phases complete, including the Phase 7 stretch goal: a closed-loop retraining trigger. Live
+at [github.com/SHAH-MEER/EpiCast](https://github.com/SHAH-MEER/EpiCast). See `CLAUDE.md` for the
 full phased build order and definition of done.
 
 ## Running the ingestion script
@@ -172,6 +172,36 @@ code is swallowed there (`|| true`) since a genuine drift finding is a monitorin
 training failure, and shouldn't block `api` from serving a perfectly good model. The report
 writes to `reports/`, bind-mounted to the host so you can open the HTML directly after
 `docker compose up` without reaching into the container.
+
+## Retraining trigger (Phase 7, stretch)
+
+```bash
+python -m epicast.monitor.retrain_trigger
+# ingests fresh data -> checks drift -> retrains + registers a new champion if drift
+# crossed the threshold. Self-contained: nothing needs to be run beforehand.
+
+python -m epicast.monitor.retrain_trigger --skip-ingest   # reuse the existing data file
+python -m epicast.monitor.retrain_trigger --force         # retrain regardless of drift
+```
+
+This is what turns the drift report from "something a person has to remember to check" into an
+actual closed loop. It ingests fresh data itself (so it can genuinely be run standalone, e.g. on
+a schedule — cron, Task Scheduler, a scheduled CI job — without any other setup), runs the same
+season-aware drift check as above, and if drift is flagged, retrains LightGBM and promotes the
+new version to `champion` via `epicast.train.lightgbm_model --register` (run as a subprocess, so
+it reuses that already-tested CLI rather than re-implementing its training/registration logic).
+
+Verified for real, not just unit-tested: run locally against live data (found drift, retrained,
+registered v3 then v4 as champion across two runs) and again against the live `docker compose`
+stack via `docker compose run --rm trainer python -m epicast.monitor.retrain_trigger --skip-ingest`
+(found drift, registered v2 in the containerized MLflow registry).
+
+**Known limitation:** a running `api` container loads its model once at startup and won't pick up
+a newly-registered champion until it's restarted (`docker compose restart api`) — there's no
+hot-reload. Wiring that up, or actually scheduling this to run periodically against a persistent
+hosted MLflow server, would be the next real step past what's in this repo; not built here since
+it needs infrastructure this project doesn't have (a persistently reachable MLflow instance), and
+Non-Goals rules out standing up something like Kubernetes just to get one.
 
 ## CI/CD
 

@@ -21,3 +21,4 @@ mlflow.db
 .mypy_cache/
 .ruff_cache/
 *.log
+
